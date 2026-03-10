@@ -1,0 +1,18 @@
+# Raw GTFS source data (large zips + extracted dirs, not needed for the web app)
+data/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Editor / IDE
+.vscode/
+*.swp
+
+# Claude Code project memory (local only)
+.claude/

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Ottawa–Gatineau Transit Travel Time Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- D3 v4 -->
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%; margin: 0; padding: 0;
+      font-family: -apple-system, "Helvetica Neue", "Arial", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: #f5f5f0;
+      color: #1a1a2e;
+    }
+
+    /* Full-screen map container */
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+    /* D3 overlay — always on top of Leaflet tiles, below UI panel */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      pointer-events: none;
+    }
+    #overlay svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    /* Re-enable pointer events only on interactive elements */
+    #overlay .stop, #overlay .home {
+      pointer-events: all;
+      cursor: pointer;
+    }
+
+    /* Lines & stops */
+    .line { fill: none; }
+    .line, .stop, .home { vector-effect: non-scaling-stroke; }
+    .stop {
+      stroke-width: 12;
+      stroke: transparent;
+    }
+    .hour-halo {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.85);
+      stroke-width: 4;
+    }
+    .hour {
+      fill: none;
+      stroke: rgba(0, 0, 40, 0.55);
+      stroke-width: 1.5;
+    }
+    .hour-label {
+      fill: rgba(0, 0, 40, 0.75);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      paint-order: stroke;
+      stroke: white;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    /* Distortion grid — faint in geo mode, more visible when warped */
+    .grid-cell {
+      fill: none;
+      stroke: rgba(30, 80, 200, 0.14);
+      stroke-width: 0.5;
+    }
+    body.travel-mode .grid-cell {
+      stroke: rgba(30, 80, 200, 0.28);
+      stroke-width: 0.6;
+    }
+
+    /* Warped map canvas — shown in travel-time mode */
+    #warpCanvas {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Tooltip */
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(255,255,255,0.96);
+      color: #1a1a2e;
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.12);
+      max-width: 220px;
+      line-height: 1.4;
+      backdrop-filter: blur(4px);
+      z-index: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    }
+    .tooltip .tt-time { opacity: 0.6; font-size: 12px; }
+
+    /* Info panel */
+    #info {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: 230px;
+      background: rgba(255, 255, 255, 0.93);
+      backdrop-filter: blur(8px);
+      color: #1a1a2e;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.10);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      z-index: 500;
+      line-height: 1.5;
+    }
+    /* Collapse toggle */
+    #collapseBtn {
+      position: absolute;
+      top: 12px;
+      right: 10px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: inherit;
+      opacity: 0.35;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+    #collapseBtn:hover { opacity: 0.7; }
+    #info.collapsed {
+      width: auto;
+      padding: 10px 14px;
+    }
+    #info.collapsed > *:not(#collapseBtn) { display: none !important; }
+    #info.collapsed #collapseBtn { position: static; }
+    #info h1 {
+      font-size: 1em;
+      font-weight: 700;
+      margin: 0 0 8px;
+      letter-spacing: 0.02em;
+    }
+    #info p { margin: 0.35em 0; font-size: 0.85em; }
+    #info .fine-print { opacity: 0.5; font-size: 0.75em; }
+    #explanation { display: none; }
+
+    /* Schedule picker */
+    #timePicker h6 {
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      font-size: 0.72em;
+      color: rgba(0,0,40,0.45);
+      margin: 14px 0 4px;
+    }
+    #timePicker ul {
+      padding: 0; margin: 0; list-style: none;
+    }
+    #timePicker li {
+      cursor: pointer;
+      opacity: 0.45;
+      font-size: 0.85em;
+      padding: 3px 0;
+      border-left: 2px solid transparent;
+      padding-left: 8px;
+      transition: opacity 0.15s;
+    }
+    #timePicker li.selected {
+      opacity: 1;
+      border-left-color: #2c52e0;
+    }
+    #timePicker li:hover { opacity: 0.75; }
+
+    /* Agency legend */
+    #legend {
+      display: flex;
+      gap: 12px;
+      margin: 12px 0 4px;
+      font-size: 0.78em;
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+      flex-shrink: 0;
+      position: relative;
+      top: 1px;
+    }
+
+    /* Attribution */
+    #attribution {
+      margin-top: 14px;
+      font-size: 0.7em;
+      opacity: 0.4;
+      line-height: 1.4;
+    }
+    #attribution a { color: inherit; text-decoration: none; }
+    #attribution a:hover { text-decoration: underline; }
+
+    @media (max-width: 600px) {
+      .stop { stroke-width: 20px; }
+      #info {
+        left: 8px; right: 8px;
+        width: auto;
+        top: auto; bottom: 8px;
+        max-height: 40vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+    }
+  </style>
+
+  <!-- Data files -->
+  <script src="subway.js"></script>
+  <script src="schedules/transfers.js"></script>
+  <script src="virtual_rider.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <canvas id="warpCanvas"></canvas>
+  <div id="overlay"><svg id="d3svg"></svg></div>
+
+  <div id="info">
+    <button id="collapseBtn">&#x25BE;</button>
+    <div id="initial">
+      <h1>Ottawa–Gatineau Travel Time Map</h1>
+      <p>Click any stop to see all other stops repositioned by how long it takes to reach them.</p>
+      <div id="legend">
+        <span><span class="legend-dot" style="background:#D52B1E"></span>OC Transpo</span>
+        <span><span class="legend-dot" style="background:#005DAA"></span>STO</span>
+      </div>
+    </div>
+    <div id="explanation">
+      <h1>Ottawa–Gatineau Travel Time Map</h1>
+      <p id="homeLabel"></p>
+      <div id="timePicker">
+        <h6>Schedule</h6>
+        <ul>
+          <li class="selected" data-schedule="weekday_rush">Weekday rush (7 AM)</li>
+          <li data-schedule="weekday_evening">Weekday evening (7 PM)</li>
+          <li data-schedule="weekend_afternoon">Weekend afternoon (12 PM)</li>
+        </ul>
+      </div>
+      <p class="fine-print">Times based on published schedules. Assumes you board the next available vehicle.</p>
+      <p class="fine-print" style="margin-top:6px">Click the origin stop again, click the background, or press Esc to deselect.</p>
+      <label class="fine-print" style="display:block;margin-top:8px;cursor:pointer">
+        <input type="checkbox" id="showMapChk" checked style="margin-right:4px;vertical-align:middle"> Show map background
+      </label>
+      <div id="legend">
+        <span><span class="legend-dot" style="background:#D52B1E"></span>OC Transpo</span>
+        <span><span class="legend-dot" style="background:#005DAA"></span>STO</span>
+      </div>
+    </div>
+    <div id="attribution">
+      Inspired by <a href="https://github.com/nate-parrott/subway" target="_blank">Nate Parrott's NYC subway map</a><br>
+      Map: <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors<br>
+      OC Transpo: <a href="https://www.octranspo.com/en/plan-your-trip/travel-tools/developers/" target="_blank">City of Ottawa Open Data</a><br>
+      STO: <a href="https://sto.ca/en/business/developer-space-open-data/" target="_blank">STO open data</a>. The STO is not responsible for the accuracy of this app.
+    </div>
+  </div>
+
+  <script src="map.js"></script>
+  <script>
+    document.querySelectorAll('#timePicker li').forEach(li => {
+      li.addEventListener('click', () => {
+        document.querySelectorAll('#timePicker li').forEach(x => x.classList.remove('selected'));
+        li.classList.add('selected');
+        setSchedule(li.dataset.schedule);
+      });
+    });
+    document.getElementById('collapseBtn').addEventListener('click', function() {
+      const info = document.getElementById('info');
+      info.classList.toggle('collapsed');
+      this.innerHTML = info.classList.contains('collapsed') ? '&#x25B8;' : '&#x25BE;';
+    });
+    document.getElementById('showMapChk').addEventListener('change', function() {
+      toggleMapBackground(this.checked);
+    });
+  </script>
+</body>
+</html>
