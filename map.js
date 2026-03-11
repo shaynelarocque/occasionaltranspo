@@ -1,5 +1,5 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MAX_TRAVEL_TIME = 90 * 60;   // seconds — 90 min max
+const MAX_TRAVEL_TIME = 120 * 60;  // seconds — 2 hr max
 const LON_SCALE       = 0.702;     // cos(45.4°N) for Ottawa
 const AGENCY_COLORS   = { oct: '#D52B1E', sto: '#005DAA' };
 const TRANSITION_MS   = 650;
@@ -48,10 +48,18 @@ const container = svg.append('g').attr('id', 'scene');
 // Grid group rendered first (behind everything)
 const gridGroup = container.append('g').attr('class', 'grid-group');
 
-// Hour-ring (visible in travel-time mode) — halo behind for contrast
-const hourHalo  = container.append('circle').attr('class', 'hour-halo');
-const hourRing  = container.append('circle').attr('class', 'hour');
-const hourLabel = container.append('text').attr('class', 'hour-label').text('1 hr');
+// Time rings (30 min, 1 hr, 2 hr) — visible in travel-time mode
+const TIME_RINGS = [
+  { seconds: 30 * 60, label: '30 min' },
+  { seconds: 60 * 60, label: '1 hr'   },
+  { seconds: 120 * 60, label: '2 hr'  },
+];
+const rings = TIME_RINGS.map(({ seconds, label }) => ({
+  seconds,
+  halo: container.append('circle').attr('class', 'hour-halo'),
+  ring: container.append('circle').attr('class', 'hour'),
+  text: container.append('text').attr('class', 'hour-label').text(label),
+}));
 
 // ─── Tooltip ──────────────────────────────────────────────────────────────────
 const tooltip = document.createElement('div');
@@ -355,17 +363,21 @@ function renderMap() {
   }
   _prevTravelMode = tMode;
 
-  // Hour ring (halo + main)
+  // Time rings (30 min, 1 hr, 2 hr)
   if (tMode) {
     const radius = Math.min(W, H) / 2 * 0.85;
-    const hourR  = radius * (3600 / MAX_TRAVEL_TIME);
-    hourHalo.attr('cx', W/2).attr('cy', H/2).attr('r', hourR).style('display', null);
-    hourRing.attr('cx', W/2).attr('cy', H/2).attr('r', hourR).style('display', null);
-    hourLabel.attr('x', W/2 + hourR + 6).attr('y', H/2 + 4).style('display', null);
+    rings.forEach(({ seconds, halo, ring, text }) => {
+      const r = radius * (seconds / MAX_TRAVEL_TIME);
+      halo.attr('cx', W/2).attr('cy', H/2).attr('r', r).style('display', null);
+      ring.attr('cx', W/2).attr('cy', H/2).attr('r', r).style('display', null);
+      text.attr('x', W/2 + r + 6).attr('y', H/2 + 4).style('display', null);
+    });
   } else {
-    hourHalo.style('display', 'none');
-    hourRing.style('display', 'none');
-    hourLabel.style('display', 'none');
+    rings.forEach(({ halo, ring, text }) => {
+      halo.style('display', 'none');
+      ring.style('display', 'none');
+      text.style('display', 'none');
+    });
   }
 
   // Grid
