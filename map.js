@@ -1,11 +1,11 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_TRAVEL_TIME = 120 * 60;  // seconds — 2 hr max
-const LON_SCALE       = 0.702;     // cos(45.4°N) for Ottawa
-const AGENCY_COLORS   = { oct: '#D52B1E', sto: '#005DAA' };
-const TRANSITION_MS   = 750;
+const LON_SCALE = 0.702;     // cos(45.4°N) for Ottawa
+const AGENCY_COLORS = { oct: '#D52B1E', sto: '#005DAA' };
+const TRANSITION_MS = 750;
 
 // Custom easing — snappy, physical-feeling curves (Emil Kowalski style)
-const EASE_OUT_EXPO  = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const EASE_OUT_EXPO = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
 const EASE_OUT_QUART = t => 1 - Math.pow(1 - t, 4);
 const EASE_OUT_CUBIC = t => 1 - Math.pow(1 - t, 3);
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -20,10 +20,10 @@ const GRID_LONS = d3.range(-76.06, -75.22, 0.048);
 // ─── State ────────────────────────────────────────────────────────────────────
 let { stations, lines } = subway;
 
-window.homeStationId    = null;
-window.schedule         = 'weekday_rush';
-window.travelTimes      = null;
-window.gridTravelTimes  = null;  // cached per-node travel times for the distortion grid
+window.homeStationId = null;
+window.schedule = 'weekday_rush';
+window.travelTimes = null;
+window.gridTravelTimes = null;  // cached per-node travel times for the distortion grid
 
 // STO hub stops: named terminals (no intersection slash, no scheduling artifacts)
 // served by enough routes to be considered a major node — shown even without bus toggle
@@ -47,9 +47,9 @@ const _stoHubs = (() => {
 // Prefer a major O-Train station (they have _stn suffix and short names)
 let defaultStop = (
   Object.keys(stations).find(id => id.endsWith('_stn') && /^rideau$/i.test(stations[id].name)) ||
-  Object.keys(stations).find(id => id.endsWith('_stn') && /rideau/i.test(stations[id].name))   ||
-  Object.keys(stations).find(id => /rideau station/i.test(stations[id].name))                   ||
-  Object.keys(stations).find(id => id.endsWith('_stn') && /hurdman/i.test(stations[id].name))  ||
+  Object.keys(stations).find(id => id.endsWith('_stn') && /rideau/i.test(stations[id].name)) ||
+  Object.keys(stations).find(id => /rideau station/i.test(stations[id].name)) ||
+  Object.keys(stations).find(id => id.endsWith('_stn') && /hurdman/i.test(stations[id].name)) ||
   Object.keys(stations)[0]
 );
 
@@ -73,8 +73,8 @@ const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/
 L.control.zoom({ position: 'bottomright' }).addTo(lmap);
 
 // ─── D3 SVG Overlay ───────────────────────────────────────────────────────────
-const svgEl     = document.getElementById('d3svg');
-const svg       = d3.select(svgEl);
+const svgEl = document.getElementById('d3svg');
+const svg = d3.select(svgEl);
 const container = svg.append('g').attr('id', 'scene');
 
 // Grid group rendered first (behind everything)
@@ -83,8 +83,8 @@ const gridGroup = container.append('g').attr('class', 'grid-group');
 // Time rings (30 min, 1 hr, 2 hr) — visible in travel-time mode
 const TIME_RINGS = [
   { seconds: 30 * 60, label: '30 min' },
-  { seconds: 60 * 60, label: '1 hr'   },
-  { seconds: 120 * 60, label: '2 hr'  },
+  { seconds: 60 * 60, label: '1 hr' },
+  { seconds: 120 * 60, label: '2 hr' },
 ];
 const rings = TIME_RINGS.map(({ seconds, label }) => ({
   seconds,
@@ -137,10 +137,10 @@ function travelPosition(stationId) {
   if (stationId === window.homeStationId) return { x: cx, y: cy };
 
   const origin = stations[window.homeStationId];
-  const s      = stations[stationId];
-  const dLat   = s.lat - origin.lat;
-  const dLon   = (s.lon - origin.lon) * LON_SCALE;
-  const angle  = Math.atan2(-dLat, dLon);
+  const s = stations[stationId];
+  const dLat = s.lat - origin.lat;
+  const dLon = (s.lon - origin.lon) * LON_SCALE;
+  const angle = Math.atan2(-dLat, dLon);
 
   const t = window.travelTimes[stationId] / MAX_TRAVEL_TIME;
   const r = Math.min(t, 1.1) * radius;
@@ -203,13 +203,13 @@ function _gridNodePosition(lat, lon) {
   const radius = Math.min(W, H) / 2 * 0.85;
   const origin = stations[window.homeStationId];
 
-  const dLat  = lat - origin.lat;
-  const dLon  = (lon - origin.lon) * LON_SCALE;
+  const dLat = lat - origin.lat;
+  const dLon = (lon - origin.lon) * LON_SCALE;
   const angle = Math.atan2(-dLat, dLon);
 
   const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  const tt  = window.gridTravelTimes?.[key] ?? MAX_TRAVEL_TIME;
-  const t   = Math.min(tt / MAX_TRAVEL_TIME, 1.2);
+  const tt = window.gridTravelTimes?.[key] ?? MAX_TRAVEL_TIME;
+  const t = Math.min(tt / MAX_TRAVEL_TIME, 1.2);
 
   return { x: cx + Math.cos(angle) * t * radius, y: cy + Math.sin(angle) * t * radius };
 }
@@ -222,8 +222,8 @@ function renderGrid() {
   const cells = [];
   for (let i = 0; i < nLat - 1; i++) {
     for (let j = 0; j < nLon - 1; j++) {
-      const tl = _gridNodePosition(GRID_LATS[i],     GRID_LONS[j]);
-      const tr = _gridNodePosition(GRID_LATS[i],     GRID_LONS[j + 1]);
+      const tl = _gridNodePosition(GRID_LATS[i], GRID_LONS[j]);
+      const tr = _gridNodePosition(GRID_LATS[i], GRID_LONS[j + 1]);
       const br = _gridNodePosition(GRID_LATS[i + 1], GRID_LONS[j + 1]);
       const bl = _gridNodePosition(GRID_LATS[i + 1], GRID_LONS[j]);
       cells.push(`M${tl.x},${tl.y}L${tr.x},${tr.y}L${br.x},${br.y}L${bl.x},${bl.y}Z`);
@@ -241,14 +241,14 @@ function renderGrid() {
 }
 
 // ─── Warp Canvas (cartogram distortion of map tiles) ─────────────────────────
-const _warpEl  = document.getElementById('warpCanvas');
+const _warpEl = document.getElementById('warpCanvas');
 const _warpCtx = _warpEl.getContext('2d');
-let _warpSrc        = null;   // captured offscreen canvas of geo-mode tiles
+let _warpSrc = null;   // captured offscreen canvas of geo-mode tiles
 let _prevTravelMode = false;
-let _savedView      = null;   // { center, zoom } before zoom-out for capture
-let _warpGen        = 0;      // generation counter to invalidate stale captures
-let _showMapBg      = false;  // user toggle for warped map background — default OFF
-let _showBus        = false;  // user toggle for bus routes/stops — default OFF
+let _savedView = null;   // { center, zoom } before zoom-out for capture
+let _warpGen = 0;      // generation counter to invalidate stale captures
+let _showMapBg = false;  // user toggle for warped map background — default OFF
+let _showBus = false;  // user toggle for bus routes/stops — default OFF
 
 /** Always returns geo screen position for a grid node. */
 function _geoGridPos(lat, lon) {
@@ -262,12 +262,12 @@ function _travelGridPos(lat, lon) {
   const cx = W / 2, cy = H / 2;
   const radius = Math.min(W, H) / 2 * 0.85;
   const origin = stations[window.homeStationId];
-  const dLat  = lat - origin.lat;
-  const dLon  = (lon - origin.lon) * LON_SCALE;
+  const dLat = lat - origin.lat;
+  const dLon = (lon - origin.lon) * LON_SCALE;
   const angle = Math.atan2(-dLat, dLon);
   const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  const tt  = window.gridTravelTimes?.[key] ?? MAX_TRAVEL_TIME;
-  const t   = Math.min(tt / MAX_TRAVEL_TIME, 1.2);
+  const tt = window.gridTravelTimes?.[key] ?? MAX_TRAVEL_TIME;
+  const t = Math.min(tt / MAX_TRAVEL_TIME, 1.2);
   return { x: cx + Math.cos(angle) * t * radius, y: cy + Math.sin(angle) * t * radius };
 }
 
@@ -302,12 +302,12 @@ function _warpTri(ctx, src,
   ctx.lineTo(dx2, dy2);
   ctx.closePath();
   ctx.clip();
-  const a  = (dx0 * (sy1 - sy2) + dx1 * (sy2 - sy0) + dx2 * (sy0 - sy1)) / det;
-  const b  = (dy0 * (sy1 - sy2) + dy1 * (sy2 - sy0) + dy2 * (sy0 - sy1)) / det;
+  const a = (dx0 * (sy1 - sy2) + dx1 * (sy2 - sy0) + dx2 * (sy0 - sy1)) / det;
+  const b = (dy0 * (sy1 - sy2) + dy1 * (sy2 - sy0) + dy2 * (sy0 - sy1)) / det;
   const c2 = (dx0 * (sx2 - sx1) + dx1 * (sx0 - sx2) + dx2 * (sx1 - sx0)) / det;
-  const d  = (dy0 * (sx2 - sx1) + dy1 * (sx0 - sx2) + dy2 * (sx1 - sx0)) / det;
-  const e  = (dx0*(sx1*sy2 - sx2*sy1) + dx1*(sx2*sy0 - sx0*sy2) + dx2*(sx0*sy1 - sx1*sy0)) / det;
-  const f  = (dy0*(sx1*sy2 - sx2*sy1) + dy1*(sx2*sy0 - sx0*sy2) + dy2*(sx0*sy1 - sx1*sy0)) / det;
+  const d = (dy0 * (sx2 - sx1) + dy1 * (sx0 - sx2) + dy2 * (sx1 - sx0)) / det;
+  const e = (dx0 * (sx1 * sy2 - sx2 * sy1) + dx1 * (sx2 * sy0 - sx0 * sy2) + dx2 * (sx0 * sy1 - sx1 * sy0)) / det;
+  const f = (dy0 * (sx1 * sy2 - sx2 * sy1) + dy1 * (sx2 * sy0 - sx0 * sy2) + dy2 * (sx0 * sy1 - sx1 * sy0)) / det;
   ctx.setTransform(a, b, c2, d, e, f);
   ctx.drawImage(src, 0, 0);
   ctx.restore();
@@ -317,7 +317,7 @@ function _warpTri(ctx, src,
 function _renderWarp() {
   if (!_warpSrc || !window.gridTravelTimes) return;
   const W = window.innerWidth, H = window.innerHeight;
-  _warpEl.width  = W;
+  _warpEl.width = W;
   _warpEl.height = H;
   _warpCtx.fillStyle = '#f5f5f0';
   _warpCtx.fillRect(0, 0, W, H);
@@ -325,14 +325,14 @@ function _renderWarp() {
   const nLat = GRID_LATS.length, nLon = GRID_LONS.length;
   for (let i = 0; i < nLat - 1; i++) {
     for (let j = 0; j < nLon - 1; j++) {
-      const s00 = _geoGridPos(GRID_LATS[i],     GRID_LONS[j]);
-      const s10 = _geoGridPos(GRID_LATS[i],     GRID_LONS[j+1]);
-      const s11 = _geoGridPos(GRID_LATS[i+1],   GRID_LONS[j+1]);
-      const s01 = _geoGridPos(GRID_LATS[i+1],   GRID_LONS[j]);
-      const d00 = _travelGridPos(GRID_LATS[i],   GRID_LONS[j]);
-      const d10 = _travelGridPos(GRID_LATS[i],   GRID_LONS[j+1]);
-      const d11 = _travelGridPos(GRID_LATS[i+1], GRID_LONS[j+1]);
-      const d01 = _travelGridPos(GRID_LATS[i+1], GRID_LONS[j]);
+      const s00 = _geoGridPos(GRID_LATS[i], GRID_LONS[j]);
+      const s10 = _geoGridPos(GRID_LATS[i], GRID_LONS[j + 1]);
+      const s11 = _geoGridPos(GRID_LATS[i + 1], GRID_LONS[j + 1]);
+      const s01 = _geoGridPos(GRID_LATS[i + 1], GRID_LONS[j]);
+      const d00 = _travelGridPos(GRID_LATS[i], GRID_LONS[j]);
+      const d10 = _travelGridPos(GRID_LATS[i], GRID_LONS[j + 1]);
+      const d11 = _travelGridPos(GRID_LATS[i + 1], GRID_LONS[j + 1]);
+      const d01 = _travelGridPos(GRID_LATS[i + 1], GRID_LONS[j]);
       // Two triangles per quad
       _warpTri(_warpCtx, _warpSrc,
         s00.x, s00.y, s10.x, s10.y, s11.x, s11.y,
@@ -404,7 +404,8 @@ function renderMap() {
     mapEl.classList.remove('map-hidden');
     lmap.invalidateSize();
     _warpEl.style.opacity = '0';
-    setTimeout(() => { _warpEl.style.display = 'none'; }, 400);
+    const currentGen = _warpGen;
+    setTimeout(() => { if (currentGen === _warpGen) _warpEl.style.display = 'none'; }, 400);
     _warpSrc = null;
   }
   _prevTravelMode = tMode;
@@ -415,21 +416,21 @@ function renderMap() {
     rings.forEach(({ seconds, halo, ring, text }, i) => {
       const r = radius * (seconds / MAX_TRAVEL_TIME);
       const stagger = REDUCED_MOTION ? 0 : i * 120;
-      halo.interrupt().attr('cx', W/2).attr('cy', H/2).attr('r', 0).style('opacity', 0).style('display', null)
+      halo.interrupt().attr('cx', W / 2).attr('cy', H / 2).attr('r', 0).style('opacity', 0).style('display', null)
         .transition().duration(DUR_RINGS).delay(stagger).ease(EASE_OUT_CUBIC)
         .attr('r', r).style('opacity', 1);
-      ring.interrupt().attr('cx', W/2).attr('cy', H/2).attr('r', 0).style('opacity', 0).style('display', null)
+      ring.interrupt().attr('cx', W / 2).attr('cy', H / 2).attr('r', 0).style('opacity', 0).style('display', null)
         .transition().duration(DUR_RINGS).delay(stagger).ease(EASE_OUT_CUBIC)
         .attr('r', r).style('opacity', 1);
-      text.interrupt().attr('y', H/2 + 4).style('opacity', 0).style('display', null)
+      text.interrupt().attr('y', H / 2 + 4).style('opacity', 0).style('display', null)
         .transition().duration(300).delay(stagger + 400).ease(EASE_OUT_CUBIC)
-        .attr('x', W/2 + r + 6).style('opacity', 1);
+        .attr('x', W / 2 + r + 6).style('opacity', 1);
     });
   } else {
     rings.forEach(({ halo, ring, text }) => {
-      halo.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none').attr('r', 0); });
-      ring.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none').attr('r', 0); });
-      text.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none'); });
+      halo.transition().duration(200).style('opacity', 0).on('end', function () { d3.select(this).style('display', 'none').attr('r', 0); });
+      ring.transition().duration(200).style('opacity', 0).on('end', function () { d3.select(this).style('display', 'none').attr('r', 0); });
+      text.transition().duration(200).style('opacity', 0).on('end', function () { d3.select(this).style('display', 'none'); });
     });
   }
 
@@ -464,15 +465,15 @@ function renderMap() {
     .append('circle')
     .attr('class', 'stop')
     .attr('fill', agencyColor)
-    .on('click',      id => setHomeStationId(id))
-    .on('mouseenter', function(id) {
+    .on('click', id => setHomeStationId(id))
+    .on('mouseenter', function (id) {
       const isRail = id.endsWith('_stn') || _stoHubs.has(id);
       if (!isRail && !_showBus) return; // don't tooltip invisible stops
       showTooltip(d3.event, id);
       const baseR = _stopRadius(id);
       d3.select(this).transition('hover').duration(150).ease(EASE_OUT_CUBIC).attr('r', baseR * 1.6);
     })
-    .on('mouseleave', function(id) {
+    .on('mouseleave', function (id) {
       hideTooltip();
       const baseR = _stopRadius(id);
       d3.select(this).transition('hover').duration(200).ease(EASE_OUT_CUBIC).attr('r', baseR);
@@ -519,8 +520,8 @@ function renderMap() {
     .attr('fill', 'white')
     .attr('stroke', '#1a1a2e')
     .attr('stroke-width', 2.5)
-    .on('click',      () => clearSelection())  // clicking home deselects
-    .on('mouseenter', function(id) { showTooltip(d3.event, id); })
+    .on('click', () => clearSelection())  // clicking home deselects
+    .on('mouseenter', function (id) { showTooltip(d3.event, id); })
     .on('mouseleave', () => hideTooltip())
     .merge(homeSelection)
     .transition().duration(DUR_STOPS).ease(EASE_OUT_EXPO)
@@ -547,11 +548,11 @@ lmap.on('move zoom', () => {
       });
     // Re-position grid nodes on pan/zoom in geo mode
     container.selectAll('.grid-cell')
-      .attr('d', function(d, i) {
+      .attr('d', function (d, i) {
         const row = (i / (GRID_LONS.length - 1)) | 0;
         const col = i % (GRID_LONS.length - 1);
-        const tl = _gridNodePosition(GRID_LATS[row],     GRID_LONS[col]);
-        const tr = _gridNodePosition(GRID_LATS[row],     GRID_LONS[col + 1]);
+        const tl = _gridNodePosition(GRID_LATS[row], GRID_LONS[col]);
+        const tr = _gridNodePosition(GRID_LATS[row], GRID_LONS[col + 1]);
         const br = _gridNodePosition(GRID_LATS[row + 1], GRID_LONS[col + 1]);
         const bl = _gridNodePosition(GRID_LATS[row + 1], GRID_LONS[col]);
         return `M${tl.x},${tl.y}L${tr.x},${tr.y}L${br.x},${br.y}L${bl.x},${bl.y}Z`;
@@ -560,7 +561,7 @@ lmap.on('move zoom', () => {
 });
 
 // Click on SVG background → deselect
-svg.on('click', function() {
+svg.on('click', function () {
   if (d3.event.target === svgEl || d3.event.target === container.node()) {
     clearSelection();
   }
@@ -609,8 +610,8 @@ function toggleMapBackground(show) {
 }
 
 function clearSelection() {
-  window.homeStationId   = null;
-  window.travelTimes     = null;
+  window.homeStationId = null;
+  window.travelTimes = null;
   window.gridTravelTimes = null;
   const initial = document.getElementById('initial');
   const explanation = document.getElementById('explanation');
@@ -658,8 +659,8 @@ function _removePulse() {
 
 function setHomeStationId(id) {
   if (id === window.homeStationId) { clearSelection(); return; }
-  window.homeStationId   = id;
-  window.travelTimes     = null;
+  window.homeStationId = id;
+  window.travelTimes = null;
   window.gridTravelTimes = null;
   updateInfoPanel();
   _showPulse(id);
@@ -687,4 +688,4 @@ function setSchedule(name) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 renderMap();
-getSchedule('weekday_rush', () => {});
+getSchedule('weekday_rush', () => { });
