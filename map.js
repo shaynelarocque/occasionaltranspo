@@ -2,7 +2,16 @@
 const MAX_TRAVEL_TIME = 120 * 60;  // seconds — 2 hr max
 const LON_SCALE       = 0.702;     // cos(45.4°N) for Ottawa
 const AGENCY_COLORS   = { oct: '#D52B1E', sto: '#005DAA' };
-const TRANSITION_MS   = 650;
+const TRANSITION_MS   = 750;
+
+// Custom easing — snappy, physical-feeling curves (Emil Kowalski style)
+const EASE_OUT_EXPO  = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const EASE_OUT_QUART = t => 1 - Math.pow(1 - t, 4);
+const EASE_OUT_CUBIC = t => 1 - Math.pow(1 - t, 3);
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DUR_STOPS = REDUCED_MOTION ? 10 : 750;
+const DUR_LINES = REDUCED_MOTION ? 10 : 700;
+const DUR_RINGS = REDUCED_MOTION ? 10 : 600;
 
 // Geographic grid covering Ottawa–Gatineau region
 const GRID_LATS = d3.range(45.15, 45.73, 0.033);
@@ -28,12 +37,16 @@ window.gridTravelTimes  = null;  // cached per-node travel times for the distort
 // Flat stop array for fast nearest-neighbour search
 const _stopArr = Object.keys(stations).map(id => ({ id, lat: stations[id].lat, lon: stations[id].lon }));
 
+// Hide tiles by default; toggled by user's "Show map background" checkbox
+document.body.classList.add('hide-map-bg');
+
 // ─── Leaflet Map ──────────────────────────────────────────────────────────────
 const OTTAWA_CENTER = [45.422, -75.697];
 const lmap = L.map('map', { zoomControl: false }).setView(OTTAWA_CENTER, 12);
 
-const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd',
   maxZoom: 19,
   crossOrigin: 'anonymous'
 }).addTo(lmap);
@@ -64,7 +77,6 @@ const rings = TIME_RINGS.map(({ seconds, label }) => ({
 // ─── Tooltip ──────────────────────────────────────────────────────────────────
 const tooltip = document.createElement('div');
 tooltip.className = 'tooltip';
-tooltip.style.display = 'none';
 document.body.appendChild(tooltip);
 
 let hideTooltipPending = false;
@@ -73,18 +85,20 @@ function showTooltip(e, stationId) {
   const s = stations[stationId];
   let html = `<strong>${s.name}</strong>`;
   if (window.travelTimes) {
-    const mins = (window.travelTimes[stationId] / 60) | 0;
-    const secs = window.travelTimes[stationId] % 60;
-    html += `<div class="tt-time">${mins}m ${secs}s away</div>`;
+    const tt = window.travelTimes[stationId];
+    if (tt && tt < 1000 * 60) {
+      const mins = (tt / 60) | 0;
+      const secs = tt % 60;
+      html += `<div class="tt-time">${mins}m ${secs}s away</div>`;
+    }
   }
   tooltip.innerHTML = html;
-  tooltip.style.display = 'block';
-  tooltip.style.left = (e.pageX + 14) + 'px';
-  tooltip.style.top  = (e.pageY + 14) + 'px';
+  tooltip.style.transform = `translate(${e.pageX + 14}px, ${e.pageY + 14}px)`;
+  tooltip.classList.add('visible');
 }
 function hideTooltip() {
   hideTooltipPending = true;
-  setTimeout(() => { if (hideTooltipPending) tooltip.style.display = 'none'; }, 120);
+  setTimeout(() => { if (hideTooltipPending) tooltip.classList.remove('visible'); }, 100);
 }
 
 // ─── Position Helpers ─────────────────────────────────────────────────────────
@@ -202,7 +216,7 @@ function renderGrid() {
     .append('path')
     .attr('class', 'grid-cell')
     .merge(sel)
-    .transition().duration(TRANSITION_MS)
+    .transition().duration(DUR_LINES).ease(EASE_OUT_QUART)
     .attr('d', d => d);
   sel.exit().remove();
 }
@@ -214,7 +228,8 @@ let _warpSrc        = null;   // captured offscreen canvas of geo-mode tiles
 let _prevTravelMode = false;
 let _savedView      = null;   // { center, zoom } before zoom-out for capture
 let _warpGen        = 0;      // generation counter to invalidate stale captures
-let _showMapBg      = true;   // user toggle for warped map background
+let _showMapBg      = false;  // user toggle for warped map background — default OFF
+let _showBus        = false;  // user toggle for bus routes/stops — default OFF
 
 /** Always returns geo screen position for a grid node. */
 function _geoGridPos(lat, lon) {
@@ -311,6 +326,11 @@ function _renderWarp() {
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
+function _stopRadius(id) {
+  const isRail = id.endsWith('_stn');
+  return isRail ? 5 : (_showBus ? 1.5 : 0);
+}
+
 function agencyColor(stationId) {
   const prefix = stationId.split('_')[0];
   return AGENCY_COLORS[prefix] || '#aaaacc';
@@ -330,9 +350,11 @@ function renderMap() {
 
   document.body.classList.toggle('travel-mode', tMode);
 
-  // Warp canvas: zoom out to capture full region, then show warped map
+  // Warp canvas: zoom out to capture full region, then crossfade
+  const mapEl = document.getElementById('map');
   if (tMode && !_prevTravelMode) {
     _savedView = { center: lmap.getCenter(), zoom: lmap.getZoom() };
+    mapEl.classList.add('map-hidden');  // immediately hide Leaflet when entering travel mode
     const gridBounds = L.latLngBounds(
       [GRID_LATS[0], GRID_LONS[0]],
       [GRID_LATS[GRID_LATS.length - 1], GRID_LONS[GRID_LONS.length - 1]]
@@ -342,9 +364,11 @@ function renderMap() {
     const doCapture = () => {
       if (gen !== _warpGen || !isTravelMode()) return;
       _warpSrc = _captureMapTiles();
-      lmap.getContainer().style.visibility = 'hidden';
-      if (_showMapBg) _warpEl.style.display = 'block';
       _renderWarp();
+      if (_showMapBg) {
+        _warpEl.style.display = 'block';
+        requestAnimationFrame(() => { _warpEl.style.opacity = '1'; });
+      }
     };
     const timer = setTimeout(doCapture, 1500);
     tileLayer.once('load', () => { clearTimeout(timer); doCapture(); });
@@ -357,26 +381,36 @@ function renderMap() {
       lmap.setView(_savedView.center, _savedView.zoom, { animate: false });
       _savedView = null;
     }
-    lmap.getContainer().style.visibility = '';
-    _warpEl.style.display = 'none';
+    // Crossfade back: show Leaflet, fade out warp
+    mapEl.classList.remove('map-hidden');
+    lmap.invalidateSize();
+    _warpEl.style.opacity = '0';
+    setTimeout(() => { _warpEl.style.display = 'none'; }, 400);
     _warpSrc = null;
   }
   _prevTravelMode = tMode;
 
-  // Time rings (30 min, 1 hr, 2 hr)
+  // Time rings (30 min, 1 hr, 2 hr) — animated entrance/exit
   if (tMode) {
     const radius = Math.min(W, H) / 2 * 0.85;
-    rings.forEach(({ seconds, halo, ring, text }) => {
+    rings.forEach(({ seconds, halo, ring, text }, i) => {
       const r = radius * (seconds / MAX_TRAVEL_TIME);
-      halo.attr('cx', W/2).attr('cy', H/2).attr('r', r).style('display', null);
-      ring.attr('cx', W/2).attr('cy', H/2).attr('r', r).style('display', null);
-      text.attr('x', W/2 + r + 6).attr('y', H/2 + 4).style('display', null);
+      const stagger = REDUCED_MOTION ? 0 : i * 120;
+      halo.interrupt().attr('cx', W/2).attr('cy', H/2).attr('r', 0).style('opacity', 0).style('display', null)
+        .transition().duration(DUR_RINGS).delay(stagger).ease(EASE_OUT_CUBIC)
+        .attr('r', r).style('opacity', 1);
+      ring.interrupt().attr('cx', W/2).attr('cy', H/2).attr('r', 0).style('opacity', 0).style('display', null)
+        .transition().duration(DUR_RINGS).delay(stagger).ease(EASE_OUT_CUBIC)
+        .attr('r', r).style('opacity', 1);
+      text.interrupt().attr('y', H/2 + 4).style('opacity', 0).style('display', null)
+        .transition().duration(300).delay(stagger + 400).ease(EASE_OUT_CUBIC)
+        .attr('x', W/2 + r + 6).style('opacity', 1);
     });
   } else {
     rings.forEach(({ halo, ring, text }) => {
-      halo.style('display', 'none');
-      ring.style('display', 'none');
-      text.style('display', 'none');
+      halo.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none').attr('r', 0); });
+      ring.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none').attr('r', 0); });
+      text.transition().duration(200).style('opacity', 0).on('end', function() { d3.select(this).style('display', 'none'); });
     });
   }
 
@@ -384,19 +418,21 @@ function renderMap() {
   renderGrid();
 
   // ── Lines ──
+  const isRailLine = l => l.route_type <= 1;
   const lineData = Object.values(lines);
   let lineSelection = container.selectAll('.line').data(lineData, d => d.route_id);
   lineSelection.enter()
     .append('path')
     .attr('class', 'line')
     .attr('stroke', routeColor)
-    .attr('stroke-width', l => l.route_type <= 1 ? 4 : (l.route_type === 2 ? 2.5 : 0.9))
-    .attr('stroke-opacity', l => l.route_type <= 1 ? 0.85 : 0.3)
     .merge(lineSelection)
-    .transition().duration(TRANSITION_MS)
+    .transition().duration(DUR_LINES).ease(EASE_OUT_QUART)
+    .attr('stroke-width', l => isRailLine(l) ? 4 : (_showBus ? 0.7 : 0))
+    .attr('stroke-opacity', l => isRailLine(l) ? 0.85 : (_showBus ? 0.18 : 0))
     .attr('d', line => {
       const pts = line.stations
         .filter(id => stations[id])
+        .filter(id => !isTravelMode() || !(window.travelTimes?.[id] >= 1000 * 60))
         .map(id => { const p = position(id); return [p.x, p.y]; });
       return d3.line()(pts);
     });
@@ -408,21 +444,49 @@ function renderMap() {
   stopSelection.enter()
     .append('circle')
     .attr('class', 'stop')
-    .attr('r', id => id.endsWith('_stn') ? 5 : 2)
     .attr('fill', agencyColor)
     .on('click',      id => setHomeStationId(id))
-    .on('mouseenter', function(id) { showTooltip(d3.event, id); })
-    .on('mouseleave', () => hideTooltip())
+    .on('mouseenter', function(id) {
+      const isRail = id.endsWith('_stn');
+      if (!isRail && !_showBus) return; // don't tooltip invisible stops
+      showTooltip(d3.event, id);
+      const baseR = _stopRadius(id);
+      d3.select(this).transition('hover').duration(150).ease(EASE_OUT_CUBIC).attr('r', baseR * 1.6);
+    })
+    .on('mouseleave', function(id) {
+      hideTooltip();
+      const baseR = _stopRadius(id);
+      d3.select(this).transition('hover').duration(200).ease(EASE_OUT_CUBIC).attr('r', baseR);
+    })
     .merge(stopSelection)
-    .transition().duration(TRANSITION_MS)
+    .transition().duration(DUR_STOPS).ease(EASE_OUT_EXPO)
+    .delay(id => {
+      if (!tMode || REDUCED_MOTION) return 0;
+      const tt = window.travelTimes?.[id] ?? MAX_TRAVEL_TIME;
+      return Math.min((tt / MAX_TRAVEL_TIME) * 200, 200);
+    })
+    .attr('r', id => _stopRadius(id))
     .attr('cx', id => position(id).x)
     .attr('cy', id => position(id).y)
     .attr('fill-opacity', id => {
       const isRail = id.endsWith('_stn');
-      if (!tMode) return isRail ? 1 : 0.65;
+      if (!isRail && !_showBus) return 0;
+      if (!tMode) return isRail ? 1 : 0.4;
       const tt = window.travelTimes?.[id] ?? MAX_TRAVEL_TIME;
+      if (tt >= 1000 * 60) return 0;  // unreachable
       const fade = Math.max(0.18, 1 - (tt / MAX_TRAVEL_TIME) * 0.82);
-      return (isRail ? 0.95 : 0.55) * fade;
+      return (isRail ? 0.95 : 0.35) * fade;
+    });
+  // Set pointer-events after transition settles
+  container.selectAll('.stop')
+    .style('pointer-events', id => {
+      const isRail = id.endsWith('_stn');
+      if (!isRail && !_showBus) return 'none';
+      if (isTravelMode()) {
+        const tt = window.travelTimes?.[id] ?? MAX_TRAVEL_TIME;
+        if (tt >= 1000 * 60) return 'none';  // unreachable — not clickable
+      }
+      return 'all';
     });
   stopSelection.exit().remove();
 
@@ -440,7 +504,7 @@ function renderMap() {
     .on('mouseenter', function(id) { showTooltip(d3.event, id); })
     .on('mouseleave', () => hideTooltip())
     .merge(homeSelection)
-    .transition().duration(TRANSITION_MS)
+    .transition().duration(DUR_STOPS).ease(EASE_OUT_EXPO)
     .attr('cx', id => position(id).x)
     .attr('cy', id => position(id).y);
   homeSelection.exit().remove();
@@ -491,28 +555,86 @@ document.addEventListener('keydown', e => {
 // ─── UI Updates ───────────────────────────────────────────────────────────────
 function updateInfoPanel() {
   if (window.homeStationId) {
-    document.getElementById('initial').style.display = 'none';
-    document.getElementById('explanation').style.display = 'block';
+    const initial = document.getElementById('initial');
+    const explanation = document.getElementById('explanation');
+    initial.classList.remove('panel-visible');
+    initial.classList.add('panel-hidden');
+    setTimeout(() => { initial.style.display = 'none'; }, 250);
     const name = stations[window.homeStationId]?.name || '';
     document.getElementById('homeLabel').textContent = `From: ${name}`;
+    explanation.style.display = 'block';
+    explanation.classList.remove('panel-visible');
+    explanation.classList.add('panel-hidden');
+    void explanation.offsetHeight; // force reflow so transition triggers
+    explanation.classList.add('panel-visible');
+    explanation.classList.remove('panel-hidden');
   }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+function toggleBusRoutes(show) {
+  _showBus = show;
+  renderMap();
+}
+
 function toggleMapBackground(show) {
   _showMapBg = show;
-  _warpEl.style.display = (isTravelMode() && _warpSrc && show) ? 'block' : 'none';
+  document.body.classList.toggle('hide-map-bg', !show);
+  if (isTravelMode() && _warpSrc && show) {
+    _warpEl.style.display = 'block';
+    requestAnimationFrame(() => { _warpEl.style.opacity = '1'; });
+  } else if (!show || isTravelMode()) {
+    _warpEl.style.opacity = '0';
+    setTimeout(() => { if (!_showMapBg || !isTravelMode()) _warpEl.style.display = 'none'; }, 400);
+  }
 }
 
 function clearSelection() {
   window.homeStationId   = null;
   window.travelTimes     = null;
   window.gridTravelTimes = null;
-  document.getElementById('initial').style.display = 'block';
-  document.getElementById('explanation').style.display = 'none';
+  const initial = document.getElementById('initial');
+  const explanation = document.getElementById('explanation');
+  explanation.classList.remove('panel-visible');
+  explanation.classList.add('panel-hidden');
+  setTimeout(() => { explanation.style.display = 'none'; }, 250);
+  // Restore initial panel: set display, force reflow, then animate in
+  initial.style.display = 'block';
+  initial.classList.remove('panel-visible');
+  initial.classList.add('panel-hidden');
+  void initial.offsetHeight; // force reflow so transition triggers
+  initial.classList.add('panel-visible');
+  initial.classList.remove('panel-hidden');
+  // Restore Leaflet map directly (defensive — renderMap also does this)
+  document.getElementById('map').classList.remove('map-hidden');
   document.body.classList.remove('travel-mode');
-  tooltip.style.display = 'none';
+  tooltip.classList.remove('visible');
+  _removePulse();
   renderMap();
+}
+
+// ─── Loading Pulse ────────────────────────────────────────────────────────────
+let _pulseEl = null;
+function _showPulse(id) {
+  _removePulse();
+  if (REDUCED_MOTION) return;
+  const pos = geoPosition(id);
+  _pulseEl = container.append('circle')
+    .attr('class', 'loading-pulse')
+    .attr('cx', pos.x).attr('cy', pos.y)
+    .attr('r', 7).attr('fill', 'none')
+    .attr('stroke', agencyColor(id)).attr('stroke-width', 2)
+    .attr('opacity', 0.6);
+  (function doPulse() {
+    if (!_pulseEl) return;
+    _pulseEl.attr('r', 7).attr('opacity', 0.6)
+      .transition().duration(800).ease(EASE_OUT_CUBIC)
+      .attr('r', 50).attr('opacity', 0)
+      .on('end', doPulse);
+  })();
+}
+function _removePulse() {
+  if (_pulseEl) { _pulseEl.interrupt().remove(); _pulseEl = null; }
 }
 
 function setHomeStationId(id) {
@@ -521,8 +643,10 @@ function setHomeStationId(id) {
   window.travelTimes     = null;
   window.gridTravelTimes = null;
   updateInfoPanel();
+  _showPulse(id);
   renderMap();
   computeTravelTimes(id, window.schedule, (times) => {
+    _removePulse();
     window.travelTimes = times;
     computeGridTravelTimes();
     renderMap();
@@ -532,7 +656,9 @@ function setHomeStationId(id) {
 function setSchedule(name) {
   window.schedule = name;
   if (window.homeStationId) {
+    _showPulse(window.homeStationId);
     computeTravelTimes(window.homeStationId, name, (times) => {
+      _removePulse();
       window.travelTimes = times;
       computeGridTravelTimes();
       renderMap();
