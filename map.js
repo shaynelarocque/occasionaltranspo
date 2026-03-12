@@ -20,6 +20,30 @@ const GRID_LONS = d3.range(-76.06, -75.22, 0.048);
 // ─── State ────────────────────────────────────────────────────────────────────
 let { stations, lines } = subway;
 
+window.homeStationId    = null;
+window.schedule         = 'weekday_rush';
+window.travelTimes      = null;
+window.gridTravelTimes  = null;  // cached per-node travel times for the distortion grid
+
+// STO hub stops: named terminals (no intersection slash, no scheduling artifacts)
+// served by enough routes to be considered a major node — shown even without bus toggle
+const _stoHubs = (() => {
+  const routeCount = {};
+  for (const line of Object.values(lines)) {
+    for (const id of line.stations) {
+      if (id.startsWith('sto_')) routeCount[id] = (routeCount[id] || 0) + 1;
+    }
+  }
+  const hubs = new Set();
+  for (const [id, count] of Object.entries(routeCount)) {
+    const name = stations[id]?.name || '';
+    if (count >= 6 && !name.includes('/') && !name.includes('#') && !name.includes('FICTIF') && !name.includes('arrêt') && !name.includes('arrivée') && !name.includes('QUAI')) {
+      hubs.add(id);
+    }
+  }
+  return hubs;
+})();
+
 // Prefer a major O-Train station (they have _stn suffix and short names)
 let defaultStop = (
   Object.keys(stations).find(id => id.endsWith('_stn') && /^rideau$/i.test(stations[id].name)) ||
@@ -28,11 +52,6 @@ let defaultStop = (
   Object.keys(stations).find(id => id.endsWith('_stn') && /hurdman/i.test(stations[id].name))  ||
   Object.keys(stations)[0]
 );
-
-window.homeStationId    = null;
-window.schedule         = 'weekday_rush';
-window.travelTimes      = null;
-window.gridTravelTimes  = null;  // cached per-node travel times for the distortion grid
 
 // Flat stop array for fast nearest-neighbour search
 const _stopArr = Object.keys(stations).map(id => ({ id, lat: stations[id].lat, lon: stations[id].lon }));
@@ -327,7 +346,7 @@ function _renderWarp() {
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function _stopRadius(id) {
-  const isRail = id.endsWith('_stn');
+  const isRail = id.endsWith('_stn') || _stoHubs.has(id);
   return isRail ? 5 : (_showBus ? 1.5 : 0);
 }
 
@@ -447,7 +466,7 @@ function renderMap() {
     .attr('fill', agencyColor)
     .on('click',      id => setHomeStationId(id))
     .on('mouseenter', function(id) {
-      const isRail = id.endsWith('_stn');
+      const isRail = id.endsWith('_stn') || _stoHubs.has(id);
       if (!isRail && !_showBus) return; // don't tooltip invisible stops
       showTooltip(d3.event, id);
       const baseR = _stopRadius(id);
@@ -469,7 +488,7 @@ function renderMap() {
     .attr('cx', id => position(id).x)
     .attr('cy', id => position(id).y)
     .attr('fill-opacity', id => {
-      const isRail = id.endsWith('_stn');
+      const isRail = id.endsWith('_stn') || _stoHubs.has(id);
       if (!isRail && !_showBus) return 0;
       if (!tMode) return isRail ? 1 : 0.4;
       const tt = window.travelTimes?.[id] ?? MAX_TRAVEL_TIME;
@@ -480,7 +499,7 @@ function renderMap() {
   // Set pointer-events after transition settles
   container.selectAll('.stop')
     .style('pointer-events', id => {
-      const isRail = id.endsWith('_stn');
+      const isRail = id.endsWith('_stn') || _stoHubs.has(id);
       if (!isRail && !_showBus) return 'none';
       if (isTravelMode()) {
         const tt = window.travelTimes?.[id] ?? MAX_TRAVEL_TIME;
